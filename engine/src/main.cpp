@@ -3,12 +3,14 @@
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;
 
+    //audio hardware
     juce::AudioDeviceManager manager;
-    manager.initialiseWithDefaultDevices(2, 2);
+    manager.initialiseWithDefaultDevices(2, 2);//2 input & 2 output channels
 
     auto* type = manager.getCurrentDeviceTypeObject();
 
     if (type != nullptr) {
+        //list of every audio device
         auto deviceNames = type->getDeviceNames();
         juce::Logger::writeToLog("--- Available Audio Devices ---");
         for (const auto& name : deviceNames) {
