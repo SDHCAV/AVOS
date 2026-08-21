@@ -4,3 +4,6 @@ build/
 .vscode/
 .DS_Store
 *.log
+/engine/build-windows/
+
+engine/build-windows/

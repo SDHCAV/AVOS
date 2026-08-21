@@ -17,8 +17,8 @@ RoutingGraph::RoutingGraph(){
         )
     );
 
-    audioInputNodeID = inputNode->nodeID;
-    audioOutputNodeID = outputNode->nodeID;  
+    audioInputNode = inputNode->nodeID;
+    audioOutputNode = outputNode->nodeID;  
 }
 
 void RoutingGraph::prepare(double sampleRate, int blockSize, int numInputChannels, int numOutputChannels){

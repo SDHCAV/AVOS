@@ -1,21 +1,26 @@
 #pragma once
-#include <juce_audio_processors/juice_audio_processors.h>
+#include <juce_audio_processors/juce_audio_processors.h>
 
 class GainProcessor : public juce::AudioProcessor{
     public:
-        GainProccessor();
+        GainProcessor()
+            : juce::AudioProcessor(BusesProperties()
+                .withInput("Input", juce::AudioChannelSet::stereo(), true)
+                .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+        ){
 
-        void prepareToPlay(double sanpleRate, int samplesPerBlock) override;
-        void releaseResources() override;
-        void processBlock(juce::AudiBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+        }
+
+        void prepareToPlay(double, int) override {}
+        void releaseResources() override {}
+        void processBlock(juce::AudioBuffer<float>& buffer, 
+            juce::MidiBuffer&) override{
+                buffer.applyGain(gain.load());
+            }
 
         void setGain(float newGain) {
             gain = newGain;
         }
-        float getGain() const{
-            return gain;
-        }
-
         const juce::String getName() const override{
             return "Gain";
         }
@@ -34,7 +39,7 @@ class GainProcessor : public juce::AudioProcessor{
         bool hasEditor() const override{
             return false;
         }
-        int getNumProfeams() override {
+        int getNumPrograms() override {
             return 1;
         }
         int getCurrentProgram() override{
@@ -52,6 +57,4 @@ class GainProcessor : public juce::AudioProcessor{
         std::atomic<float> gain {
             1.0f
         };
-
-        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GainProcessor)
-}
+};
