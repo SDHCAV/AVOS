@@ -18,6 +18,9 @@ target_sources(av_flow_engine PRIVATE
     src/GainProcessor.h
     src/PannerProcessor.h
     src/LevelMeter.h
+    src/MixMinusBus.cpp          
+    src/MixMinusBus.h 
+
 )
 
 target_link_libraries(av_flow_engine PRIVATE 
@@ -34,11 +37,15 @@ add_executable(av_flow_engine_tests
     tests/test_main.cpp
     tests/PannerProcessorTests.cpp
     tests/GainProcessorTests.cpp
+    tests/MixMinusBusTests.cpp
+
     src/RoutingGraph.cpp
     src/RoutingGraph.h
     src/GainProcessor.h
     src/PannerProcessor.h
     src/LevelMeter.h
+    src/MixMinusBus.cpp          
+    src/MixMinusBus.h
 )
 
 target_link_libraries(av_flow_engine_tests PRIVATE

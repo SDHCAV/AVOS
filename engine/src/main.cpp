@@ -1,6 +1,8 @@
 #include "RoutingGraph.h"
 #include "GainProcessor.h"
 #include "PannerProcessor.h"
+#include "MixMinusBus.h"
+
 #include "EngineAudioCallback.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <iostream>
@@ -28,19 +30,30 @@ int main()
 
     RoutingGraph routingGraph;
 
-    // 1. Instantiate Gain and Panner Processors
+    //gain
     auto gainPtr = std::make_unique<GainProcessor>();
     GainProcessor* gain = gainPtr.get();
     auto gainID = routingGraph.addNode(std::move(gainPtr));
 
+    //panner
     auto pannerPtr = std::make_unique<PannerProcessor>();
     PannerProcessor* panner = pannerPtr.get();
     auto pannerID = routingGraph.addNode(std::move(pannerPtr));
 
-    // 2. Connect: Mic Input -> Gain -> Panner -> Output Speakers
+    //connect mic (input)-> gain -> panner -> speakers (output)
     routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, gainID, 0);
     routingGraph.connect(gainID, 0, pannerID, 0);
     routingGraph.connect(pannerID, 0, routingGraph.getAudioOutputNodeID(), 0);
+
+    //mixminus
+    auto mixMinusPtr = std::make_unique<MixMinusBus>(2); //2 sources, mic (channel 0), zoom (channel 1)
+    MixMinusBus* mixMinus = mixMinusPtr.get();
+    auto mixMinusID = routingGraph.addNode(std::move(mixMinusPtr));
+    mixMinus->setExcludedChannel(1); //exlcude zoom return
+
+    routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, mixMinusID, 0); //0 = mic
+    routingGraph.connect(routingGraph.getAudioInputNodeID(), 1, mixMinusID, 1); //1 = zoom
+    routingGraph.connect(mixMinusID, 0, routingGraph.getAudioOutputNodeID(), 1); //bus output -> zoom send channel 1
 
     juce::AudioDeviceManager deviceManager;
     deviceManager.initialiseWithDefaultDevices(2, 2);
