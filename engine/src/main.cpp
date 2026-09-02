@@ -3,6 +3,7 @@
 #include "PannerProcessor.h"
 #include "MixMinusBus.h"
 
+#include "EngineWebSocketServer.h"
 #include "EngineAudioCallback.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <iostream>
@@ -29,6 +30,9 @@ int main()
     juce::ScopedJuceInitialiser_GUI gui;
 
     RoutingGraph routingGraph;
+
+    EngineWebSocketServer wsServer(routingGraph);
+    wsServer.start();
 
     //gain
     auto gainPtr = std::make_unique<GainProcessor>();
@@ -104,6 +108,9 @@ int main()
     runInteractiveStage("Stage 4: Muted (Gain set to 0.0f)");
 
     deviceManager.removeAudioCallback(&callback);
+    wsServer.stop();
     std::cout << "\nEngine shut down cleanly." << std::endl;
     return 0;
+
+   
 }
