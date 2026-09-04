@@ -1,49 +1,83 @@
 #pragma once
-#include <server_ws.hpp>
-#include <juce_core/juce_core.h>
+#include <boost/asio.hpp>
+#include "WsSession.h"
 #include "RoutingGraph.h"
 #include <thread>
-
-using WsServer = SimpleWeb::SocketServer<SimpleWeb::WS>;
+#include <set>
+#include <mutex>
 
 class EngineWebSocketServer
 {
 public:
-    explicit EngineWebSocketServer(RoutingGraph& graphToUse)
-        : routingGraph(graphToUse)
-    {
-        server.config.port = 9001;
-
-        auto& endpoint = server.endpoint["^/$"];
-
-        endpoint.on_message = [this](std::shared_ptr<WsServer::Connection> connection,
-                                      std::shared_ptr<WsServer::Message> message)
-        {
-            handleMessage(message->string());
-        };
-
-        endpoint.on_open = [](std::shared_ptr<WsServer::Connection>)
-        {
-            DBG("WebSocket client connected.");
-        };
-    }
+    explicit EngineWebSocketServer(RoutingGraph& graphToUse, unsigned short port = 9001)
+        : routingGraph(graphToUse),
+          acceptor(ioc, tcp::endpoint(tcp::v4(), port))
+    {}
 
     void start()
     {
-        serverThread = std::thread([this] { server.start(); });
+        doAccept();
+        serverThread = std::thread([this] { ioc.run(); });
     }
 
     void stop()
     {
-        server.stop();
+        ioc.stop();
         if (serverThread.joinable())
             serverThread.join();
     }
 
+    // Send a message to every connected client — for your Dashboard's
+    // levels/deviceList/status pushes.
+    void broadcast(const std::string& message)
+    {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        for (auto& session : sessions)
+            session->send(message);
+    }
+
 private:
+    void doAccept()
+    {
+        acceptor.async_accept(
+            [this](beast::error_code ec, tcp::socket socket)
+            {
+                if (!ec)
+                {
+                    auto session = std::make_shared<WsSession>(std::move(socket));
+
+                    session->setMessageHandler(
+                        [this](std::shared_ptr<WsSession> s, const std::string& msg)
+                        {
+                            handleMessage(msg);
+                        });
+
+                    session->setCloseHandler(
+                        [this](std::shared_ptr<WsSession> s)
+                        {
+                            std::lock_guard<std::mutex> lock(sessionsMutex);
+                            sessions.erase(s);
+                        });
+
+                    {
+                        std::lock_guard<std::mutex> lock(sessionsMutex);
+                        sessions.insert(session);
+                    }
+
+                    session->run();
+                }
+
+                doAccept(); // keep accepting the next connection
+            });
+    }
+
     void handleMessage(const std::string& raw);
 
-    WsServer server;
+    net::io_context ioc{1};
+    tcp::acceptor acceptor;
     RoutingGraph& routingGraph;
     std::thread serverThread;
+
+    std::set<std::shared_ptr<WsSession>> sessions;
+    std::mutex sessionsMutex;
 };

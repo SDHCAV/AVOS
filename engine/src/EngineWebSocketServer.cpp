@@ -15,7 +15,6 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
 
     if (type == "connect")
     {
-        // { "type": "connect", "from": 1, "fromChannel": 0, "to": 2, "toChannel": 0 }
         int fromUid = (int) json["from"];
         int fromChannel = (int) json["fromChannel"];
         int toUid = (int) json["to"];
