@@ -15,7 +15,7 @@
 std::string renderMeterBar(float level, int width = 15) {
     int filled = static_cast<int>(level * width * 6.0f);
     filled = std::min(width, std::max(0, filled));
-    
+
     std::string bar = "[";
     for (int i = 0; i < width; ++i) {
         if (i < filled) bar += "=";
@@ -31,7 +31,26 @@ int main()
 
     RoutingGraph routingGraph;
 
+    // CHANGED: deviceManager is now declared BEFORE the wsServer setup below,
+    // so it can be captured by setDeviceListProvider before wsServer.start() runs.
+    juce::AudioDeviceManager deviceManager;
+    deviceManager.initialiseWithDefaultDevices(2, 2);
+
     EngineWebSocketServer wsServer(routingGraph);
+
+    // CHANGED: moved this ABOVE wsServer.start() — previously it was set after start(),
+    // which left a small window where a very-fast-connecting client could get no device list.
+    wsServer.setDeviceListProvider([&deviceManager]() -> juce::StringArray
+    {
+        juce::StringArray devices;
+        if (auto* type = deviceManager.getCurrentDeviceTypeObject())
+        {
+            devices.addArray(type->getDeviceNames(true));   // inputs
+            devices.addArray(type->getDeviceNames(false));  // outputs
+        }
+        return devices;
+    });
+
     wsServer.start();
 
     //gain
@@ -53,17 +72,29 @@ int main()
     auto mixMinusPtr = std::make_unique<MixMinusBus>(2); //2 sources, mic (channel 0), zoom (channel 1)
     MixMinusBus* mixMinus = mixMinusPtr.get();
     auto mixMinusID = routingGraph.addNode(std::move(mixMinusPtr));
-    mixMinus->setExcludedChannel(1); //exlcude zoom return
+    mixMinus->setExcludedChannel(1); //exclude zoom return
 
     routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, mixMinusID, 0); //0 = mic
     routingGraph.connect(routingGraph.getAudioInputNodeID(), 1, mixMinusID, 1); //1 = zoom
     routingGraph.connect(mixMinusID, 0, routingGraph.getAudioOutputNodeID(), 1); //bus output -> zoom send channel 1
 
-    juce::AudioDeviceManager deviceManager;
-    deviceManager.initialiseWithDefaultDevices(2, 2);
-
     EngineAudioCallback callback(routingGraph);
     deviceManager.addAudioCallback(&callback);
+
+    std::atomic<bool> levelsRunning{true};
+    std::thread levelsThread([&]()
+    {
+        while (levelsRunning)
+        {
+            float micLevel = callback.inputMeter.getLevel();
+            float outLevel = callback.outputMeter.getLevel();
+
+            wsServer.broadcastLevels("mic-1", micLevel, micLevel);
+            wsServer.broadcastLevels("speaker-out", outLevel, outLevel);
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    });
 
     std::cout << "========================================" << std::endl;
     std::cout << "  AVOS Audio Engine: Pan & Gain Demo   " << std::endl;
@@ -79,7 +110,7 @@ int main()
                 float inLvl = callback.inputMeter.getLevel();
                 float outLvl = callback.outputMeter.getLevel();
 
-                std::cout << "\rMic Input: " << renderMeterBar(inLvl) 
+                std::cout << "\rMic Input: " << renderMeterBar(inLvl)
                           << " | Out: " << renderMeterBar(outLvl) << std::flush;
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -108,9 +139,10 @@ int main()
     runInteractiveStage("Stage 4: Muted (Gain set to 0.0f)");
 
     deviceManager.removeAudioCallback(&callback);
-    wsServer.stop();
+    levelsRunning = false;
+    if (levelsThread.joinable())
+        levelsThread.join();
+    wsServer.stop();   // CHANGED (from way earlier): this now correctly runs before return, not after
     std::cout << "\nEngine shut down cleanly." << std::endl;
     return 0;
-
-   
 }

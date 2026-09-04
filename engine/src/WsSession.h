@@ -5,6 +5,7 @@
 #include <memory>
 #include <functional>
 #include <string>
+#include <deque>   // CHANGED: needed for the write queue
 
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
@@ -16,6 +17,7 @@ class WsSession : public std::enable_shared_from_this<WsSession>
 public:
     using MessageHandler = std::function<void(std::shared_ptr<WsSession>, const std::string&)>;
     using CloseHandler   = std::function<void(std::shared_ptr<WsSession>)>;
+    using OpenHandler    = std::function<void(std::shared_ptr<WsSession>)>;   // CHANGED: new — fires once handshake truly completes
 
     explicit WsSession(tcp::socket&& socket)
         : ws(std::move(socket))
@@ -23,10 +25,10 @@ public:
 
     void setMessageHandler(MessageHandler handler) { onMessage = std::move(handler); }
     void setCloseHandler(CloseHandler handler)      { onClose = std::move(handler); }
+    void setOpenHandler(OpenHandler handler)        { onOpen = std::move(handler); }   // CHANGED: new setter
 
     void run()
     {
-        // Perform the WebSocket handshake asynchronously
         ws.async_accept(
             beast::bind_front_handler(&WsSession::onAccept, shared_from_this()));
     }
@@ -34,7 +36,9 @@ public:
     void send(const std::string& message)
     {
         net::post(ws.get_executor(),
-            beast::bind_front_handler(&WsSession::doWrite, shared_from_this(), message));
+            beast::bind_front_handler(&WsSession::enqueueWrite, shared_from_this(), message));
+        // CHANGED: now posts to enqueueWrite() instead of doWrite() directly,
+        // so overlapping sends get queued instead of colliding
     }
 
     void close()
@@ -46,7 +50,9 @@ public:
 private:
     void onAccept(beast::error_code ec)
     {
-        if (ec) return; // handshake failed — connection just drops
+        if (ec) return;
+        if (onOpen) onOpen(shared_from_this());   // CHANGED: notify that the handshake is genuinely done —
+                                                     // this is the correct place to send a "welcome" message like deviceList
         doRead();
     }
 
@@ -70,27 +76,40 @@ private:
 
         if (onMessage) onMessage(shared_from_this(), message);
 
-        doRead(); // queue up the next read
+        doRead();
     }
 
-    void doWrite(const std::string& message)
+    // CHANGED: replaced the old single-message doWrite(std::string) with a queue-based version.
+    // Beast forbids starting a new async_write before the previous one's handler has fired,
+    // so multiple sends in quick succession (e.g. broadcastLevels sending 2 messages back to back)
+    // need to be serialized rather than fired concurrently.
+
+    void enqueueWrite(const std::string& message)
     {
-        // Copy into a member so it stays alive across the async call
-        outgoing = message;
-        ws.async_write(net::buffer(outgoing),
+        writeQueue.push_back(message);
+        if (writeQueue.size() == 1)   // nothing currently in flight — start sending now
+            doWrite();
+        // if queue was already non-empty, onWrite() will pick this up when it's this item's turn
+    }
+
+    void doWrite()
+    {
+        ws.async_write(net::buffer(writeQueue.front()),
             beast::bind_front_handler(&WsSession::onWrite, shared_from_this()));
     }
 
     void onWrite(beast::error_code ec, std::size_t)
     {
-        // Nothing to do here for a single message; a real send-queue
-        // would pop the next pending message here if you ever
-        // need to send faster than one-at-a-time.
+        writeQueue.pop_front();
+        if (ec) return;
+        if (!writeQueue.empty())
+            doWrite();   // send whatever's next in line
     }
 
     websocket::stream<tcp::socket> ws;
     beast::flat_buffer buffer;
-    std::string outgoing;
+    std::deque<std::string> writeQueue;   // CHANGED: replaces the old single `std::string outgoing;`
     MessageHandler onMessage;
     CloseHandler onClose;
+    OpenHandler onOpen;   // CHANGED: new member
 };
