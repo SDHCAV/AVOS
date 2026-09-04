@@ -15,16 +15,27 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
 
     if (type == "connect")
     {
-        int fromUid = (int) json["from"];
-        int fromChannel = (int) json["fromChannel"];
-        int toUid = (int) json["to"];
-        int toChannel = (int) json["toChannel"];
+        // CHANGED: "from"/"to" are now string names (per the spec), not raw integer IDs
+        std::string fromName = json["from"].toString().toStdString();
+        std::string toName   = json["to"].toString().toStdString();
 
-        RoutingGraph::NodeID from { juce::AudioProcessorGraph::NodeID((uint32_t) fromUid) };
-        RoutingGraph::NodeID to   { juce::AudioProcessorGraph::NodeID((uint32_t) toUid) };
+        RoutingGraph::NodeID fromNode, toNode;
+        int fromChannel, toChannel;
 
-        bool ok = routingGraph.connect(from, fromChannel, to, toChannel);
-        DBG("connect message: " << (ok ? "OK" : "FAILED"));
+        bool fromOk = resolveEndpoint(fromName, fromNode, fromChannel);
+        bool toOk   = resolveEndpoint(toName, toNode, toChannel);
+
+        if (!fromOk || !toOk)
+        {
+            DBG("connect message: FAILED — unknown endpoint name(s): "
+                << (fromOk ? "" : juce::String(fromName) + " ")
+                << (toOk ? "" : juce::String(toName)));
+            return;
+        }
+
+        bool ok = routingGraph.connect(fromNode, fromChannel, toNode, toChannel);
+        DBG("connect message: " << (ok ? "OK" : "FAILED") 
+            << " (" << fromName << " -> " << toName << ")");
     }
     else
     {

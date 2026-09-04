@@ -31,22 +31,48 @@ int main()
 
     RoutingGraph routingGraph;
 
-    // CHANGED: deviceManager is now declared BEFORE the wsServer setup below,
-    // so it can be captured by setDeviceListProvider before wsServer.start() runs.
     juce::AudioDeviceManager deviceManager;
-    deviceManager.initialiseWithDefaultDevices(2, 2);
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    deviceManager.getAudioDeviceSetup(setup);
+
+    setup.outputDeviceName = "CABLE Input (VB-Audio Virtual Cable)";
+    setup.outputChannels.clear();
+    setup.outputChannels.setRange(0, 2, true);
+    setup.useDefaultOutputChannels = false;
+
+    juce::String result = deviceManager.initialise(2, 2, nullptr, true, {}, &setup);
+
+    if (result.isNotEmpty())
+    {
+        std::cerr << "Failed to initialise audio device with virtual cable: " << result << std::endl;
+        deviceManager.initialiseWithDefaultDevices(2, 2);
+    }
+
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        std::cout << "Active output device: " << device->getName() << std::endl;
+        std::cout << "Active output channels: " << device->getOutputChannelNames().joinIntoString(", ") << std::endl;
+    }
+
+    // CHANGED: EngineAudioCallback + addAudioCallback moved up here — BEFORE any
+    // graph nodes are created or connected. addAudioCallback triggers
+    // audioDeviceAboutToStart(), which calls routingGraph.prepare(), which is what
+    // actually gives the graph's input/output I/O nodes a real channel count.
+    // Doing this first means every connect() call below happens against
+    // properly-configured I/O nodes, instead of nodes that still think they have 0 channels.
+    EngineAudioCallback callback(routingGraph);
+    deviceManager.addAudioCallback(&callback);
 
     EngineWebSocketServer wsServer(routingGraph);
 
-    // CHANGED: moved this ABOVE wsServer.start() — previously it was set after start(),
-    // which left a small window where a very-fast-connecting client could get no device list.
     wsServer.setDeviceListProvider([&deviceManager]() -> juce::StringArray
     {
         juce::StringArray devices;
         if (auto* type = deviceManager.getCurrentDeviceTypeObject())
         {
-            devices.addArray(type->getDeviceNames(true));   // inputs
-            devices.addArray(type->getDeviceNames(false));  // outputs
+            devices.addArray(type->getDeviceNames(true));
+            devices.addArray(type->getDeviceNames(false));
         }
         return devices;
     });
@@ -64,22 +90,37 @@ int main()
     auto pannerID = routingGraph.addNode(std::move(pannerPtr));
 
     //connect mic (input)-> gain -> panner -> speakers (output)
-    routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, gainID, 0);
-    routingGraph.connect(gainID, 0, pannerID, 0);
-    routingGraph.connect(pannerID, 0, routingGraph.getAudioOutputNodeID(), 0);
+    // CHANGED: these should now succeed, since the I/O nodes are already prepared above
+    bool ok1 = routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, gainID, 0);
+    bool ok2 = routingGraph.connect(gainID, 0, pannerID, 0);
+    bool ok3 = routingGraph.connect(pannerID, 0, routingGraph.getAudioOutputNodeID(), 0);
+
+    std::cout << "mic->gain: " << ok1
+            << ", gain->panner: " << ok2
+            << ", panner->output: " << ok3 << std::endl;
+
+    wsServer.registerEndpoint("mic-1", routingGraph.getAudioInputNodeID(), 0);
+    wsServer.registerEndpoint("gain-1", gainID, 0);
+    wsServer.registerEndpoint("panner-1", pannerID, 0);
+    wsServer.registerEndpoint("speaker-out", routingGraph.getAudioOutputNodeID(), 0);
 
     //mixminus
-    auto mixMinusPtr = std::make_unique<MixMinusBus>(2); //2 sources, mic (channel 0), zoom (channel 1)
+    auto mixMinusPtr = std::make_unique<MixMinusBus>(2);
     MixMinusBus* mixMinus = mixMinusPtr.get();
     auto mixMinusID = routingGraph.addNode(std::move(mixMinusPtr));
-    mixMinus->setExcludedChannel(1); //exclude zoom return
+    mixMinus->setExcludedChannel(1);
 
-    routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, mixMinusID, 0); //0 = mic
-    routingGraph.connect(routingGraph.getAudioInputNodeID(), 1, mixMinusID, 1); //1 = zoom
-    routingGraph.connect(mixMinusID, 0, routingGraph.getAudioOutputNodeID(), 1); //bus output -> zoom send channel 1
+    // CHANGED: capturing these too, so we can confirm the mixMinus path also succeeds now
+    bool ok4 = routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, mixMinusID, 0);
+    bool ok5 = routingGraph.connect(routingGraph.getAudioInputNodeID(), 1, mixMinusID, 1);
+    bool ok6 = routingGraph.connect(mixMinusID, 0, routingGraph.getAudioOutputNodeID(), 1);
 
-    EngineAudioCallback callback(routingGraph);
-    deviceManager.addAudioCallback(&callback);
+    std::cout << "mic->mixMinus[0]: " << ok4
+            << ", mic->mixMinus[1]: " << ok5
+            << ", mixMinus->output[1]: " << ok6 << std::endl;
+
+    wsServer.registerEndpoint("zoomSend-1", routingGraph.getAudioOutputNodeID(), 1);
+    wsServer.registerEndpoint("mixminus-1", mixMinusID, 0);
 
     std::atomic<bool> levelsRunning{true};
     std::thread levelsThread([&]()
@@ -142,7 +183,7 @@ int main()
     levelsRunning = false;
     if (levelsThread.joinable())
         levelsThread.join();
-    wsServer.stop();   // CHANGED (from way earlier): this now correctly runs before return, not after
+    wsServer.stop();
     std::cout << "\nEngine shut down cleanly." << std::endl;
     return 0;
 }

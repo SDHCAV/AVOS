@@ -13,10 +13,9 @@ class GainProcessor : public juce::AudioProcessor{
 
         void prepareToPlay(double, int) override {}
         void releaseResources() override {}
-        void processBlock(juce::AudioBuffer<float>& buffer, 
-            juce::MidiBuffer&) override{
-                buffer.applyGain(gain.load());
-            }
+        void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override{
+            buffer.applyGain(gain.load());
+        }
 
         void setGain(float newGain) {
             gain = newGain;

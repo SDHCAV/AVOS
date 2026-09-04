@@ -17,6 +17,12 @@ public:
           acceptor(ioc, tcp::endpoint(tcp::v4(), port))
     {}
 
+    struct NamedEndpoint
+    {
+        RoutingGraph::NodeID node;
+        int channel;
+    };
+
     void setDeviceListProvider(DeviceListProvider provider)
     {
         deviceListProvider = std::move(provider);
@@ -54,8 +60,23 @@ public:
         broadcast(json.toStdString());
     }
 
+    void registerEndpoint(const std::string& name, RoutingGraph::NodeID node, int channel)
+    {
+        endpoints[name] = { node, channel };
+    }
+
+    bool resolveEndpoint(const std::string& name, RoutingGraph::NodeID& outNode, int& outChannel) const
+    {
+        auto it = endpoints.find(name);
+        if (it == endpoints.end())
+            return false;
+        outNode = it->second.node;
+        outChannel = it->second.channel;
+        return true;
+    }
 private:
     DeviceListProvider deviceListProvider;
+    std::map<std::string, NamedEndpoint> endpoints;
 
     void doAccept()
     {
