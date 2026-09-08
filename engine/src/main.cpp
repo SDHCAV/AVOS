@@ -110,16 +110,16 @@ int main()
     auto mixMinusID = routingGraph.addNode(std::move(mixMinusPtr));
     mixMinus->setExcludedChannel(1);
 
-    // CHANGED: capturing these too, so we can confirm the mixMinus path also succeeds now
     bool ok4 = routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, mixMinusID, 0);
     bool ok5 = routingGraph.connect(routingGraph.getAudioInputNodeID(), 1, mixMinusID, 1);
-    bool ok6 = routingGraph.connect(mixMinusID, 0, routingGraph.getAudioOutputNodeID(), 1);
+    // bool ok6 = routingGraph.connect(mixMinusID, 0, routingGraph.getAudioOutputNodeID(), 1);
 
     std::cout << "mic->mixMinus[0]: " << ok4
             << ", mic->mixMinus[1]: " << ok5
-            << ", mixMinus->output[1]: " << ok6 << std::endl;
+            // << ", mixMinus->output[1]: " << ok6
+            << std::endl;
 
-    wsServer.registerEndpoint("zoomSend-1", routingGraph.getAudioOutputNodeID(), 1);
+    wsServer.registerEndpoint("zoomSend-1", routingGraph.getAudioOutputNodeID(), 0);
     wsServer.registerEndpoint("mixminus-1", mixMinusID, 0);
 
     std::atomic<bool> levelsRunning{true};

@@ -15,7 +15,6 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
 
     if (type == "connect")
     {
-        // CHANGED: "from"/"to" are now string names (per the spec), not raw integer IDs
         std::string fromName = json["from"].toString().toStdString();
         std::string toName   = json["to"].toString().toStdString();
 
@@ -28,8 +27,8 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
         if (!fromOk || !toOk)
         {
             DBG("connect message: FAILED — unknown endpoint name(s): "
-                << (fromOk ? "" : juce::String(fromName) + " ")
-                << (toOk ? "" : juce::String(toName)));
+                << (!fromOk ? juce::String(fromName) + " [UNRESOLVED] " : "")
+                << (!toOk ? juce::String(toName) + " [UNRESOLVED]" : ""));
             return;
         }
 
@@ -42,3 +41,35 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
         DBG("Unknown message type: " << type);
     }
 }
+
+// bool EngineWebSocketServer::resolveEndpoint(const std::string& name, 
+//                                            RoutingGraph::NodeID& nodeOut, 
+//                                            int& channelOut)
+// {
+//     // === EDIT HERE: Hardcode string mappings or query your endpoint map ===
+//     if (name == "mixminus-1")
+//     {
+//         nodeOut = mixMinusNodeID; // Assign your MixMinusBus NodeID
+//         channelOut = 0;           // Output channel 0
+//         return true;
+//     }
+//     else if (name == "zoomSend-1")
+//     {
+//         nodeOut = routingGraph.getAudioOutputNodeID(); // Hardware/Virtual Cable Output
+//         channelOut = 1;                               // Channel 1 for Zoom
+//         return true;
+//     }
+
+//     // If using a dynamic map, replace the above if/else with:
+//     /*
+//     auto it = endpointMap.find(name);
+//     if (it != endpointMap.end())
+//     {
+//         nodeOut = it->second.nodeID;
+//         channelOut = it->second.channel;
+//         return true;
+//     }
+//     */
+
+//     return false; // Name not recognized
+// }
