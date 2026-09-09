@@ -99,10 +99,12 @@ int main()
             << ", gain->panner: " << ok2
             << ", panner->output: " << ok3 << std::endl;
 
-    wsServer.registerEndpoint("mic-1", routingGraph.getAudioInputNodeID(), 0);
-    wsServer.registerEndpoint("gain-1", gainID, 0);
-    wsServer.registerEndpoint("panner-1", pannerID, 0);
-    wsServer.registerEndpoint("speaker-out", routingGraph.getAudioOutputNodeID(), 0);
+    using Kind = EngineWebSocketServer::EndpointKind;   // CHANGED: convenience alias
+
+    wsServer.registerEndpoint("mic-1", routingGraph.getAudioInputNodeID(), 0, Kind::Source);
+    wsServer.registerEndpoint("gain-1", gainID, 0, Kind::Internal);       // CHANGED: now tagged Internal — hidden from UI
+    wsServer.registerEndpoint("panner-1", pannerID, 0, Kind::Internal);   // CHANGED: same
+    wsServer.registerEndpoint("speaker-out", routingGraph.getAudioOutputNodeID(), 0, Kind::Destination);
 
     //mixminus
     auto mixMinusPtr = std::make_unique<MixMinusBus>(2);
@@ -119,8 +121,8 @@ int main()
             // << ", mixMinus->output[1]: " << ok6
             << std::endl;
 
-    wsServer.registerEndpoint("zoomSend-1", routingGraph.getAudioOutputNodeID(), 0);
-    wsServer.registerEndpoint("mixminus-1", mixMinusID, 0);
+    wsServer.registerEndpoint("zoomSend-1", routingGraph.getAudioOutputNodeID(), 1, Kind::Destination);
+    wsServer.registerEndpoint("mixminus-1", mixMinusID, 0, Kind::Source);
 
     std::atomic<bool> levelsRunning{true};
     std::thread levelsThread([&]()

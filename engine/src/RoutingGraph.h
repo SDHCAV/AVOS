@@ -43,6 +43,16 @@ class RoutingGraph
         void processBlock(juce::AudioBuffer<float>& buffer, 
             juce::MidiBuffer& midiMessages);
 
+        struct ConnectionInfo
+        {
+            NodeID fromNode;
+            int fromChannel;
+            NodeID toNode;
+            int toChannel;
+        };
+
+        std::vector<ConnectionInfo> getCurrentConnections() const;
+
     NodeID getAudioInputNodeID()  const { return audioInputNode; }
     NodeID getAudioOutputNodeID() const { return audioOutputNode; }
 

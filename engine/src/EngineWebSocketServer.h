@@ -5,27 +5,50 @@
 #include <thread>
 #include <set>
 #include <mutex>
-#include <juce_core/juce_core.h>   // CHANGED: needed here now for juce::StringArray / JSON building
+#include <map>
+#include <string>
+#include <juce_core/juce_core.h>
 
 class EngineWebSocketServer
 {
 public:
     using DeviceListProvider = std::function<juce::StringArray()>;
 
-    explicit EngineWebSocketServer(RoutingGraph& graphToUse, unsigned short port = 9001)
-        : routingGraph(graphToUse),
-          acceptor(ioc, tcp::endpoint(tcp::v4(), port))
-    {}
+    // CHANGED: new — lets registerEndpoint tag what kind of thing this is,
+    // so internal processing nodes (gain, panner) can be hidden from the UI
+    enum class EndpointKind { Source, Destination, Internal };
 
     struct NamedEndpoint
     {
         RoutingGraph::NodeID node;
         int channel;
+        EndpointKind kind;   // CHANGED: added
     };
+
+    explicit EngineWebSocketServer(RoutingGraph& graphToUse, unsigned short port = 9001)
+        : routingGraph(graphToUse),
+          acceptor(ioc, tcp::endpoint(tcp::v4(), port))
+    {}
 
     void setDeviceListProvider(DeviceListProvider provider)
     {
         deviceListProvider = std::move(provider);
+    }
+
+    // CHANGED: signature now takes `kind`
+    void registerEndpoint(const std::string& name, RoutingGraph::NodeID node, int channel, EndpointKind kind)
+    {
+        endpoints[name] = { node, channel, kind };
+    }
+
+    bool resolveEndpoint(const std::string& name, RoutingGraph::NodeID& outNode, int& outChannel) const
+    {
+        auto it = endpoints.find(name);
+        if (it == endpoints.end())
+            return false;
+        outNode = it->second.node;
+        outChannel = it->second.channel;
+        return true;
     }
 
     void start()
@@ -60,23 +83,79 @@ public:
         broadcast(json.toStdString());
     }
 
-    void registerEndpoint(const std::string& name, RoutingGraph::NodeID node, int channel)
+    // CHANGED: new — resolves a NodeID+channel back to its registered name.
+    // Option B: linear search, fine given the small number of registered endpoints.
+    std::string findNameForEndpoint(RoutingGraph::NodeID node, int channel) const
     {
-        endpoints[name] = { node, channel };
+        for (auto& [name, ep] : endpoints)
+        {
+            if (ep.node == node && ep.channel == channel)
+                return name;
+        }
+        return {};   // not found — likely an internal/unregistered node
     }
 
-    bool resolveEndpoint(const std::string& name, RoutingGraph::NodeID& outNode, int& outChannel) const
+    // CHANGED: new — builds the full "endpoints" message: filtered endpoint list + current connections
+    std::string buildEndpointsMessage() const
     {
-        auto it = endpoints.find(name);
-        if (it == endpoints.end())
-            return false;
-        outNode = it->second.node;
-        outChannel = it->second.channel;
-        return true;
+        juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+        obj->setProperty("type", "endpoints");
+
+        // endpoint list — skip anything tagged Internal
+        juce::Array<juce::var> endpointArray;
+        for (auto& [name, ep] : endpoints)
+        {
+            if (ep.kind == EndpointKind::Internal)
+                continue;
+
+            juce::DynamicObject::Ptr epObj = new juce::DynamicObject();
+            epObj->setProperty("id", juce::String(name));
+            epObj->setProperty("label", juce::String(name));   // TODO: nicer display names later if needed
+            epObj->setProperty("kind", ep.kind == EndpointKind::Source ? "source" : "destination");
+            endpointArray.add(juce::var(epObj.get()));
+        }
+        obj->setProperty("endpoints", endpointArray);
+
+        // current connections — resolve each NodeID/channel pair back to a registered name;
+        // skip any connection where either end isn't a registered (or is an internal) endpoint
+        juce::Array<juce::var> connectionArray;
+        for (auto& conn : routingGraph.getCurrentConnections())
+        {
+            std::string fromName = findNameForEndpoint(conn.fromNode, conn.fromChannel);
+            std::string toName   = findNameForEndpoint(conn.toNode, conn.toChannel);
+
+            if (fromName.empty() || toName.empty())
+                continue;
+
+            auto fromKind = endpoints.at(fromName).kind;
+            auto toKind = endpoints.at(toName).kind;
+            if (fromKind == EndpointKind::Internal || toKind == EndpointKind::Internal)
+                continue;
+
+            juce::DynamicObject::Ptr connObj = new juce::DynamicObject();
+            connObj->setProperty("from", juce::String(fromName));
+            connObj->setProperty("to", juce::String(toName));
+            connectionArray.add(juce::var(connObj.get()));
+        }
+        obj->setProperty("connections", connectionArray);
+
+        return juce::JSON::toString(juce::var(obj.get())).toStdString();
     }
+
+    // CHANGED: new — broadcasts a connect/disconnect result to all clients
+    void sendConnectAck(const std::string& from, const std::string& to, bool ok)
+    {
+        juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+        obj->setProperty("type", "connect");
+        obj->setProperty("ok", ok);
+        obj->setProperty("from", juce::String(from));
+        obj->setProperty("to", juce::String(to));
+
+        broadcast(juce::JSON::toString(juce::var(obj.get())).toStdString());
+    }
+
 private:
     DeviceListProvider deviceListProvider;
-    std::map<std::string, NamedEndpoint> endpoints;
 
     void doAccept()
     {
@@ -100,10 +179,6 @@ private:
                             sessions.erase(s);
                         });
 
-                    // CHANGED: new — this replaces the old "send deviceList right after run()" code.
-                    // onOpen only fires once the WebSocket handshake has genuinely completed,
-                    // so it's safe to send here (unlike right after calling run(), which is async
-                    // and returns before the handshake is actually done).
                     session->setOpenHandler(
                         [this](std::shared_ptr<WsSession> s)
                         {
@@ -119,9 +194,12 @@ private:
                                     deviceArray.add(name);
                                 obj->setProperty("devices", deviceArray);
 
-                                juce::String json = juce::JSON::toString(juce::var(obj.get()));
-                                s->send(json.toStdString());
+                                s->send(juce::JSON::toString(juce::var(obj.get())).toStdString());
                             }
+
+                            // CHANGED: also send the current endpoints/connections snapshot on connect —
+                            // covers the "server also sends this unprompted on connect" comment in engineSocket.ts
+                            s->send(buildEndpointsMessage());
                         });
 
                     {
@@ -130,7 +208,6 @@ private:
                     }
 
                     session->run();
-                    // CHANGED: no longer sending deviceList right here — moved into setOpenHandler above
                 }
 
                 doAccept();
@@ -146,4 +223,5 @@ private:
 
     std::set<std::shared_ptr<WsSession>> sessions;
     std::mutex sessionsMutex;
+    std::map<std::string, NamedEndpoint> endpoints;
 };

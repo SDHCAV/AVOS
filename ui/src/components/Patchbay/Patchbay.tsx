@@ -20,8 +20,8 @@ import {
   onLevels,
   sendConnect,
   type EngineEndpoint,
-} from '../../lib/engineSocket';
-import './Patchbay.css';
+} from '../../lib/engineSocket'; // components/patchbay/ -> lib/
+import './patchbay.css';
 
 interface PortNodeData {
   label: string;
@@ -122,9 +122,10 @@ export default function Patchbay() {
   // anything else (React Flow only re-renders the node whose data changed).
   useEffect(() => {
     const unsubscribe = onLevels((msg) => {
-      const level = (msg.left + msg.right) / 2;
+      // rms for the meter fill — steadier than peak, which is fine for a
+      // glance-level bar; swap to msg.peak if you want it twitchier.
       setNodes((nds) =>
-        nds.map((n) => (n.id === msg.id ? { ...n, data: { ...n.data, level } } : n)),
+        nds.map((n) => (n.id === msg.node ? { ...n, data: { ...n.data, level: msg.rms } } : n)),
       );
     });
     return unsubscribe;

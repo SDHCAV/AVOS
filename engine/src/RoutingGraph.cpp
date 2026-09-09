@@ -39,10 +39,15 @@ bool RoutingGraph::connect(NodeID from, int fromChannel, NodeID to, int toChanne
         {to, toChannel}
     };
 
-    if (!graph.canConnect(connection))
+    bool canConnect = graph.canConnect(connection);
+    DBG("canConnect result: " << (canConnect ? "true" : "false"));
+
+    if (!canConnect)
         return false;
 
-    return graph.addConnection(connection);
+    bool added = graph.addConnection(connection);
+    DBG("addConnection result: " << (added ? "true" : "false"));
+    return added;
 }
 
 bool RoutingGraph::disconnect(NodeID from, int fromChannel, NodeID to, int toChannel){
@@ -57,4 +62,21 @@ bool RoutingGraph::disconnect(NodeID from, int fromChannel, NodeID to, int toCha
 //run every node's DSP & moves aydio along all current connections
 void RoutingGraph::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages){
     graph.processBlock(buffer, midiMessages);
+}
+
+std::vector<RoutingGraph::ConnectionInfo> RoutingGraph::getCurrentConnections() const
+{
+    std::vector<ConnectionInfo> result;
+
+    for (auto& connection : graph.getConnections())
+    {
+        result.push_back({
+            connection.source.nodeID,
+            connection.source.channelIndex,
+            connection.destination.nodeID,
+            connection.destination.channelIndex
+        });
+    }
+
+    return result;
 }
