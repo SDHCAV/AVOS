@@ -64,6 +64,23 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
         // the same snapshot anyway, and it's cheap.
         broadcast(buildEndpointsMessage());
     }
+    else if (type == "setParam")
+    {
+        std::string node = json["node"].toString().toStdString();
+        std::string param = json["param"].toString().toStdString();
+        float value = (float) json["value"];
+
+        auto it = paramSetters.find(node + "." + param);
+        if (it != paramSetters.end())
+        {
+            it->second(value);
+            DBG("setParam OK: " << node << "." << param << " = " << value);
+        }
+        else
+        {
+            DBG("setParam FAILED: unknown " << node << "." << param);
+        }
+    }
     else
     {
         DBG("Unknown message type: " << type);

@@ -2,6 +2,7 @@
 #include "GainProcessor.h"
 #include "PannerProcessor.h"
 #include "MixMinusBus.h"
+#include "GateProcessor.h"  
 
 #include "EngineWebSocketServer.h"
 #include "EngineAudioCallback.h"
@@ -80,29 +81,40 @@ int main()
     wsServer.start();
 
     //gain
-    auto gainPtr = std::make_unique<GainProcessor>();
+    auto gainPtr = std::make_unique<GainProcessor>(1);
     GainProcessor* gain = gainPtr.get();
     auto gainID = routingGraph.addNode(std::move(gainPtr));
+
+    //gate
+    auto gatePtr = std::make_unique<GateProcessor>(1);   // mono, same reasoning as GainProcessor(1)
+    GateProcessor* gate = gatePtr.get();
+    auto gateID = routingGraph.addNode(std::move(gatePtr));
 
     //panner
     auto pannerPtr = std::make_unique<PannerProcessor>();
     PannerProcessor* panner = pannerPtr.get();
     auto pannerID = routingGraph.addNode(std::move(pannerPtr));
 
-    //connect mic (input)-> gain -> panner -> speakers (output)
-    // CHANGED: these should now succeed, since the I/O nodes are already prepared above
+    wsServer.registerParam("gain-1", "gain", [gain](float v) { gain->setGain(v); });
+    wsServer.registerParam("panner-1", "pan", [panner](float v) { panner->setPanner(v); });
+    wsServer.registerParam("gate-1", "threshold", [gate](float v) { gate->setThresholdDb(v); });
+
+    //connect mic (input)-> gain -> gate -> panner -> speakers (output)
     bool ok1 = routingGraph.connect(routingGraph.getAudioInputNodeID(), 0, gainID, 0);
-    bool ok2 = routingGraph.connect(gainID, 0, pannerID, 0);
+    bool ok1b = routingGraph.connect(gainID, 0, gateID, 0);
+    bool ok2 = routingGraph.connect(gateID, 0, pannerID, 0);
     bool ok3 = routingGraph.connect(pannerID, 0, routingGraph.getAudioOutputNodeID(), 0);
 
     std::cout << "mic->gain: " << ok1
-            << ", gain->panner: " << ok2
-            << ", panner->output: " << ok3 << std::endl;
+        << ", gain->gate: " << ok1b
+        << ", gate->panner: " << ok2
+        << ", panner->output: " << ok3 << std::endl;
 
     using Kind = EngineWebSocketServer::EndpointKind;   // CHANGED: convenience alias
 
     wsServer.registerEndpoint("mic-1", routingGraph.getAudioInputNodeID(), 0, Kind::Source);
     wsServer.registerEndpoint("gain-1", gainID, 0, Kind::Internal);       // CHANGED: now tagged Internal — hidden from UI
+    wsServer.registerEndpoint("gate-1", gateID, 0, Kind::Internal); 
     wsServer.registerEndpoint("panner-1", pannerID, 0, Kind::Internal);   // CHANGED: same
     wsServer.registerEndpoint("speaker-out", routingGraph.getAudioOutputNodeID(), 0, Kind::Destination);
 

@@ -3,13 +3,16 @@
 
 class GainProcessor : public juce::AudioProcessor{
     public:
-        GainProcessor()
-            : juce::AudioProcessor(BusesProperties()
-                .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                .withOutput("Output", juce::AudioChannelSet::stereo(), true)
-        ){
+        // GainProcessor()
+        //     : juce::AudioProcessor(BusesProperties()
+        //         .withInput("Input", juce::AudioChannelSet::stereo(), true)
+        //         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+        // ){
 
-        }
+        // }
+        explicit GainProcessor(int numChannels = 2)
+            : juce::AudioProcessor(makeBusLayout(numChannels))
+        {}
 
         void prepareToPlay(double, int) override {}
         void releaseResources() override {}
@@ -53,6 +56,13 @@ class GainProcessor : public juce::AudioProcessor{
         void setStateInformation(const void*, int) override{}
 
     private:
+        static juce::AudioProcessor::BusesProperties makeBusLayout(int numChannels)
+        {
+            return juce::AudioProcessor::BusesProperties()
+                .withInput("Input", juce::AudioChannelSet::canonicalChannelSet(numChannels), true)
+                .withOutput("Output", juce::AudioChannelSet::canonicalChannelSet(numChannels), true);
+        }
+    
         std::atomic<float> gain {
             1.0f
         };

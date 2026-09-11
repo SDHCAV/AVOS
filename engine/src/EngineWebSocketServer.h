@@ -12,6 +12,13 @@
 class EngineWebSocketServer
 {
 public:
+    using ParamSetter = std::function<void(float)>;
+
+    void registerParam(const std::string& node, const std::string& param, ParamSetter setter)
+    {
+        paramSetters[node + "." + param] = std::move(setter);
+    }
+    
     using DeviceListProvider = std::function<juce::StringArray()>;
 
     // CHANGED: new — lets registerEndpoint tag what kind of thing this is,
@@ -156,6 +163,7 @@ public:
 
 private:
     DeviceListProvider deviceListProvider;
+    std::map<std::string, ParamSetter> paramSetters;
 
     void doAccept()
     {

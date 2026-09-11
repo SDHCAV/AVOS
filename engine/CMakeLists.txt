@@ -28,6 +28,7 @@ target_sources(av_flow_engine PRIVATE
     src/MixMinusBus.h 
     src/EngineWebSocketServer.cpp   
     src/EngineWebSocketServer.h  
+    src/GateProcessor.h  
 )
 
 target_link_libraries(av_flow_engine PRIVATE 
@@ -51,6 +52,7 @@ add_executable(av_flow_engine_tests
     tests/PannerProcessorTests.cpp
     tests/GainProcessorTests.cpp
     tests/MixMinusBusTests.cpp
+    tests/GateProcessorTests.cpp 
 
     src/RoutingGraph.cpp
     src/RoutingGraph.h
