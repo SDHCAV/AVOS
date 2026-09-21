@@ -1,5 +1,6 @@
 #include "EngineWebSocketServer.h"
 #include <juce_core/juce_core.h>
+#include <iostream>
 
 void EngineWebSocketServer::handleMessage(const std::string& raw)
 {
@@ -33,10 +34,10 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
         if (fromOk && toOk)
             ok = routingGraph.connect(fromNode, fromChannel, toNode, toChannel);
 
-        DBG("connect message: " << (ok ? "OK" : "FAILED") << " (" << fromName << " -> " << toName << ")");
+        std::cout << "connect message: " << (ok ? "OK" : "FAILED") << " (" << fromName << " -> " << toName << ")" << std::endl;
         sendConnectAck(fromName, toName, ok);
     }
-    else if (type == "disconnect")   // CHANGED: new — mirrors "connect"
+    else if (type == "disconnect")   
     {
         std::string fromName = json["from"].toString().toStdString();
         std::string toName   = json["to"].toString().toStdString();
@@ -51,17 +52,13 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
         if (fromOk && toOk)
             ok = routingGraph.disconnect(fromNode, fromChannel, toNode, toChannel);
 
-        DBG("disconnect message: " << (ok ? "OK" : "FAILED")
-            << " (" << fromName << " -> " << toName << ")");
+        std::cout << "disconnect message: " << (ok ? "OK" : "FAILED")
+            << " (" << fromName << " -> " << toName << ")" << std::endl;
 
-        sendConnectAck(fromName, toName, ok);   // reuses the same ack shape — client already handles "connect" type acks
+        sendConnectAck(fromName, toName, ok);
     }
-    else if (type == "getEndpoints")   // CHANGED: new — client-requested snapshot
+    else if (type == "getEndpoints")
     {
-        // find the requesting session and reply directly — but handleMessage
-        // currently doesn't have access to which session sent this message.
-        // Simplest correct fix: just broadcast it, since every client wants
-        // the same snapshot anyway, and it's cheap.
         broadcast(buildEndpointsMessage());
     }
     else if (type == "setParam")
@@ -74,15 +71,15 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
         if (it != paramSetters.end())
         {
             it->second(value);
-            DBG("setParam OK: " << node << "." << param << " = " << value);
+            std::cout << "setParam OK: " << node << "." << param << " = " << value << std::endl;
         }
         else
         {
-            DBG("setParam FAILED: unknown " << node << "." << param);
+            std::cout << "setParam FAILED: unknown " << node << "." << param << std::endl;
         }
     }
     else
     {
-        DBG("Unknown message type: " << type);
+        std::cout << "Unknown message type: " << type << std::endl;
     }
 }

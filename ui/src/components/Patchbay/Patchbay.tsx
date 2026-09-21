@@ -21,6 +21,7 @@ import {
   sendConnect,
   type EngineEndpoint,
 } from '../../lib/engineSocket'; // components/patchbay/ -> lib/
+import ControlPanel from '../ControlPanel/ControlPanel';
 import './patchbay.css';
 
 interface PortNodeData {
@@ -144,20 +145,23 @@ export default function Patchbay() {
   const proOptions = useMemo(() => ({ hideAttribution: true }), []);
 
   return (
-    <div className="patchbay">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        proOptions={proOptions}
-        fitView
-      >
-        <Background gap={24} size={1} />
-        <Controls showInteractive={false} />
-      </ReactFlow>
+    <div className="patchbay" style={{ display: 'flex' }}>
+      <div style={{ flex: 1 }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          proOptions={proOptions}
+          fitView
+        >
+          <Background gap={24} size={1} />
+          <Controls showInteractive={false} />
+        </ReactFlow>
+      </div>
+      <ControlPanel />
     </div>
   );
 }

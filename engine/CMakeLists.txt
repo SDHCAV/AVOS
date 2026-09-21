@@ -34,6 +34,7 @@ target_sources(av_flow_engine PRIVATE
 target_link_libraries(av_flow_engine PRIVATE 
     juce::juce_audio_devices 
     juce::juce_audio_processors
+    juce::juce_dsp
     Boost::system
     OpenSSL::SSL
     OpenSSL::Crypto
@@ -66,6 +67,7 @@ add_executable(av_flow_engine_tests
 target_link_libraries(av_flow_engine_tests PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_processors
+    juce::juce_dsp
 )
 
 target_compile_definitions(av_flow_engine_tests PRIVATE

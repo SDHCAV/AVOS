@@ -1,4 +1,4 @@
-import Patchbay from './components/patchbay/patchbay';
+import Patchbay from './components/Patchbay/Patchbay';
 import './App.css';
 
 function App() {

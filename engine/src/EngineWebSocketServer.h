@@ -8,6 +8,9 @@
 #include <map>
 #include <string>
 #include <juce_core/juce_core.h>
+#include <vector>
+#include <mutex>
+#include <memory>
 
 class EngineWebSocketServer
 {

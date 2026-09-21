@@ -159,3 +159,7 @@ export function sendConnect(from: string, to: string) {
 export function sendDisconnect(from: string, to: string) {
   socket?.send(JSON.stringify({ type: 'disconnect', from, to }));
 }
+
+export function sendSetParam(node: string, param: string, value: number) {
+  socket?.send(JSON.stringify({ type: 'setParam', node, param, value }));
+}
