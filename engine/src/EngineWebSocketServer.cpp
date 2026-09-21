@@ -55,7 +55,13 @@ void EngineWebSocketServer::handleMessage(const std::string& raw)
         std::cout << "disconnect message: " << (ok ? "OK" : "FAILED")
             << " (" << fromName << " -> " << toName << ")" << std::endl;
 
-        sendConnectAck(fromName, toName, ok);
+        juce::DynamicObject::Ptr reply = new juce::DynamicObject();
+        reply->setProperty("type", "disconnect");
+        reply->setProperty("ok", ok);
+        reply->setProperty("from", juce::String(fromName));
+        reply->setProperty("to", juce::String(toName));
+
+        broadcast(juce::JSON::toString(reply.getDataSource()));
     }
     else if (type == "getEndpoints")
     {

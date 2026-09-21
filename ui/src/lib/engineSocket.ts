@@ -1,41 +1,3 @@
-// engineSocket.ts
-//
-// Thin wrapper around the WebSocket connection to the AVOS audio engine.
-// Matches EngineWebSocketServer.h / .cpp as of the "endpoints"/"connect ack"
-// patch. Everything the engine sends is JSON with a `type` field:
-//
-//   -> (client sends on open — server also sends this unprompted on connect)
-//   { type: "getEndpoints" }
-//
-//   <- (server responds with the current graph — internal nodes like
-//      gain/panner are filtered out server-side via EndpointKind::Internal)
-//   {
-//     type: "endpoints",
-//     endpoints: [
-//       { id: "mic-1", label: "Mic", kind: "source" },
-//       { id: "mixminus-1", label: "Mix-Minus", kind: "source" },
-//       { id: "speaker-out", label: "Speakers", kind: "destination" },
-//       { id: "zoomSend-1", label: "Zoom Send", kind: "destination" }
-//     ],
-//     connections: [
-//       { from: "mic-1", to: "speaker-out" }
-//     ]
-//   }
-//
-//   <- (server confirms/rejects a connect request, broadcast to all clients)
-//   { type: "connect", ok: true, from: "mixminus-1", to: "zoomSend-1" }
-//
-//   <- (periodic level meter update — matches wsServer.broadcastLevels(node, peak, rms))
-//   { type: "levels", node: "mic-1", peak: 0.51, rms: 0.34 }
-//
-//   <- (hardware audio device names, sent once on open — separate from the
-//      routing graph above; not consumed by Patchbay, but here for a future
-//      device-picker component)
-//   { type: "deviceList", devices: ["CABLE Input (VB-Audio Virtual Cable)", ...] }
-//
-// There's no "disconnect" handling on the server yet — sendDisconnect below
-// sends the message but the engine currently just logs "Unknown message type".
-
 export type EndpointKind = 'source' | 'destination';
 
 export interface EngineEndpoint {
@@ -62,6 +24,13 @@ interface ConnectAckMessage {
   to: string;
 }
 
+interface DisconnectAckMessage {
+  type: 'disconnect';
+  ok: boolean;
+  from: string;
+  to: string;
+}
+
 interface LevelsMessage {
   type: 'levels';
   node: string;
@@ -74,12 +43,18 @@ interface DeviceListMessage {
   devices: string[];
 }
 
-type EngineMessage = EndpointsMessage | ConnectAckMessage | LevelsMessage | DeviceListMessage;
+type EngineMessage = 
+  | EndpointsMessage 
+  | ConnectAckMessage 
+  | DisconnectAckMessage
+  | LevelsMessage 
+  | DeviceListMessage;
 
 type Listener<T> = (payload: T) => void;
 
 const endpointsListeners = new Set<Listener<EndpointsMessage>>();
 const connectAckListeners = new Set<Listener<ConnectAckMessage>>();
+const disconnectAckListeners = new Set<Listener<DisconnectAckMessage>>();
 const levelsListeners = new Set<Listener<LevelsMessage>>();
 const deviceListListeners = new Set<Listener<DeviceListMessage>>();
 
@@ -108,6 +83,9 @@ function connect(url = 'ws://localhost:9001') {
         break;
       case 'connect':
         connectAckListeners.forEach((fn) => fn(msg));
+        break;
+      case 'disconnect':
+        disconnectAckListeners.forEach((fn) => fn(msg));
         break;
       case 'levels':
         levelsListeners.forEach((fn) => fn(msg));
@@ -142,6 +120,11 @@ export function onConnectAck(fn: Listener<ConnectAckMessage>) {
   return () => connectAckListeners.delete(fn);
 }
 
+export function onDisconnectAck(fn: Listener<DisconnectAckMessage>) {
+  disconnectAckListeners.add(fn);
+  return () => disconnectAckListeners.delete(fn);
+}
+
 export function onLevels(fn: Listener<LevelsMessage>) {
   levelsListeners.add(fn);
   return () => levelsListeners.delete(fn);
@@ -157,9 +140,12 @@ export function sendConnect(from: string, to: string) {
 }
 
 export function sendDisconnect(from: string, to: string) {
-  socket?.send(JSON.stringify({ type: 'disconnect', from, to }));
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'disconnect', from, to }));
+  }
 }
 
 export function sendSetParam(node: string, param: string, value: number) {
   socket?.send(JSON.stringify({ type: 'setParam', node, param, value }));
 }
+
